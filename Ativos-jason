@@ -1,228 +1,441 @@
 import json
-import os
-from datetime import datetime
+from enum import Enum
 
-ARQUIVO_ATIVOS = "ativos.json"
-ARQUIVO_USUARIOS = "usuarios.json"
+class TipoAtivo(Enum):
+    NOTEBOOKS = 1
+    SERVIDORES = 2
+    ESTACOES_DE_TRABALHO = 3
+    ROTEADORES = 4
+    IMPRESSORAS_DE_REDE = 5
+    SISTEMAS_INTERNOS = 6
+    SOFTWARES_LICENCIADOS = 7
+    APLICACOES_WEB = 8
+    BANCOS_DE_DADOS = 9
 
+class Severidade(Enum):
+    BAIXA = 1
+    MEDIA = 2
+    ALTA = 3
+    CRITICA = 4
 
-def carregar_dados(nome_arquivo):
-    if not os.path.exists(nome_arquivo):
-        return []
+class StatusVuln(Enum):
+    ABERTA = 1
+    EM_TRATAMENTO = 2
+    CORRIGIDA = 3
+    ACEITA_COMO_RISCO = 4
 
+class Vulnerabilidade:
+    def __init__(self, descricao, severidade, status, responsavel_correcao=None):
+        self.descricao = descricao
+        self.severidade = severidade
+        self.status = status
+        self.responsavel_correcao = responsavel_correcao
+
+    def to_dict(self):
+        return {
+            "descricao": self.descricao,
+            "severidade": self.severidade,
+            "status": self.status,
+            "responsavel_correcao": self.responsavel_correcao
+        }
+
+class Ativo:
+    def __init__(self, id_ativo, nome, tipo, localizacao, responsavel):
+        self.id_ativo = int(id_ativo)
+        self.nome = nome
+        self.tipo = tipo
+        self.localizacao = localizacao
+        self.responsavel = responsavel
+        self.vulnerabilidades = []
+
+    def adicionar_vulnerabilidade(self, vuln):
+        self.vulnerabilidades.append(vuln)
+
+    def to_dict(self):
+        return {
+            "id_ativo": self.id_ativo,
+            "nome": self.nome,
+            "tipo": self.tipo,
+            "localizacao": self.localizacao,
+            "responsavel": self.responsavel,
+            "vulnerabilidades": [v.to_dict() for v in self.vulnerabilidades]
+        }
+
+ARQUIVO_DB = "database_seguranca.json"
+base_ativos = {}
+
+def gerar_proximo_id():
+    if not base_ativos:
+        return 1
+    return max(int(k) for k in base_ativos.keys()) + 1
+
+def salvar_dados():
     try:
-        with open(nome_arquivo, "r", encoding="utf-8") as arq:
-            return json.load(arq)
+        data = {str(id_at): obj.to_dict() for id_at, obj in base_ativos.items()}
+        with open(ARQUIVO_DB, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=4, ensure_ascii=False)
+    except Exception as e:
+        print(f"Erro ao salvar dados: {e}")
+
+def carregar_dados():
+    global base_ativos
+    try:
+        with open(ARQUIVO_DB, "r", encoding="utf-8") as f:
+            dados_brutos = json.load(f)
+        base_ativos.clear()
+        for id_str, info in dados_brutos.items():
+            novo_ativo = Ativo(
+                info["id_ativo"],
+                info["nome"],
+                info["tipo"],
+                info["localizacao"],
+                info["responsavel"]
+            )
+            for v in info["vulnerabilidades"]:
+                vuln_obj = Vulnerabilidade(
+                    v["descricao"],
+                    v["severidade"],
+                    v["status"],
+                    v.get("responsavel_correcao")
+                )
+                novo_ativo.adicionar_vulnerabilidade(vuln_obj)
+            base_ativos[int(id_str)] = novo_ativo
+    except FileNotFoundError:
+        base_ativos = {}
     except json.JSONDecodeError:
-        print(f"⚠️ Erro ao ler {nome_arquivo}. Arquivo corrompido.")
-        return []
-    except Exception as erro:
-        print(f"⚠️ Erro inesperado: {erro}")
-        return []
+        print("[!] Arquivo JSON corrompido.")
+        base_ativos = {}
 
+def coletar_dados_vulnerabilidade():
+    print("\n[Dica: Digite 'v' para voltar]")
+    desc = input("Descrição da vulnerabilidade: ").strip()
+    if desc.lower() == "v":
+        return None
 
-def salvar_dados(nome_arquivo, dados):
-    try:
-        with open(nome_arquivo, "w", encoding="utf-8") as arq:
-            json.dump(dados, arq, indent=4, ensure_ascii=False)
-    except Exception as erro:
-        print(f"⚠️ Erro ao salvar dados: {erro}")
+    while True:
+        print("\nNíveis de Severidade:")
+        for sev in Severidade:
+            print(f"{sev.value} - {sev.name.capitalize()}")
+        s_input = input("Escolha o código da severidade: ").strip()
+        if s_input.lower() == "v":
+            return None
+        try:
+            s_cod = int(s_input)
+            severidade_nome = Severidade(s_cod).name.capitalize()
+            break
+        except (ValueError, KeyError):
+            print("[!] Código inválido.")
 
+    while True:
+        print("\nStatus da Vulnerabilidade:")
+        for st in StatusVuln:
+            nome_exibicao = st.name.replace("_", " ").capitalize()
+            print(f"{st.value} - {nome_exibicao}")
+        st_input = input("Escolha o código do status: ").strip()
+        if st_input.lower() == "v":
+            return None
+        try:
+            st_cod = int(st_input)
+            status_enum = StatusVuln(st_cod)
+            status_nome = status_enum.name.replace("_", " ").capitalize()
+            break
+        except (ValueError, KeyError):
+            print("[!] Código inválido.")
 
-def gerar_protocolo():
-    ativos = carregar_dados(ARQUIVO_ATIVOS)
+    responsavel_corr = None
+    if status_enum in [StatusVuln.CORRIGIDA, StatusVuln.EM_TRATAMENTO]:
+        responsavel_corr = input("Nome do responsável pela ação/correção: ").strip()
+        if responsavel_corr.lower() == "v":
+            return None
 
-    if not ativos:
-        return "ATV-0001"
-
-    try:
-        ultimo_protocolo = ativos[-1]["protocolo"]
-        numero = int(ultimo_protocolo.split("-")[1])
-    except (KeyError, ValueError, IndexError):
-        numero = len(ativos)
-
-    novo_numero = numero + 1
-    return f"ATV-{novo_numero:04d}"
-
-
-def cadastrar_usuario():
-    usuarios = carregar_dados(ARQUIVO_USUARIOS)
-
-    nome = input("Nome do usuário: ").strip()
-    email = input("Email: ").strip()
-
-    if not nome or not email:
-        print("\n❌ Nome e email são obrigatórios.\n")
-        return
-
-    novo_usuario = {
-        "id": len(usuarios) + 1,
-        "nome": nome,
-        "email": email
-    }
-
-    usuarios.append(novo_usuario)
-    salvar_dados(ARQUIVO_USUARIOS, usuarios)
-    print("\n✅ Usuário cadastrado com sucesso!\n")
-
-
-def listar_usuarios():
-    usuarios = carregar_dados(ARQUIVO_USUARIOS)
-
-    if not usuarios:
-        print("\nNenhum usuário cadastrado.\n")
-        return
-
-    print("\n===== USUÁRIOS =====")
-    for usuario in usuarios:
-        print(f"""
-ID: {usuario['id']}
-Nome: {usuario['nome']}
-Email: {usuario['email']}
-        """)
-
+    return Vulnerabilidade(desc, severidade_nome, status_nome, responsavel_corr)
 
 def cadastrar_ativo():
-    ativos = carregar_dados(ARQUIVO_ATIVOS)
-    protocolo = gerar_protocolo()
-
-    titulo = input("Título do ativo: ").strip()
-    descricao = input("Descrição: ").strip()
+    print("\n--- NOVO CADASTRO ---")
+    print("[Dica: Digite 'v' para voltar]")
+    id_at = gerar_proximo_id()
+    
+    nome = input("Nome/Hostname do Ativo: ").strip()
+    if nome.lower() == "v": return
+    
     responsavel = input("Responsável: ").strip()
+    if responsavel.lower() == "v": return
+    
+    local = input("Setor/Localização: ").strip()
+    if local.lower() == "v": return
 
-    if not titulo or not responsavel:
-        print("\n❌ Título e responsável são obrigatórios.\n")
-        return
-
-    novo_ativo = {
-        "protocolo": protocolo,
-        "titulo": titulo,
-        "descricao": descricao,
-        "responsavel": responsavel,
-        "status": "ABERTO",
-        "data_criacao": datetime.now().strftime("%d/%m/%Y %H:%M")
-    }
-
-    ativos.append(novo_ativo)
-    salvar_dados(ARQUIVO_ATIVOS, ativos)
-
-    print("\n✅ Ativo cadastrado com sucesso!")
-    print(f"📌 Protocolo gerado: {protocolo}\n")
-
-
-def listar_ativos():
-    ativos = carregar_dados(ARQUIVO_ATIVOS)
-
-    if not ativos:
-        print("\nNenhum ativo cadastrado.\n")
-        return
-
-    print("\n========== LISTA DE ATIVOS ==========")
-    for ativo in ativos:
-        print(f"""
-Protocolo  : {ativo['protocolo']}
-Título     : {ativo['titulo']}
-Descrição  : {ativo['descricao']}
-Responsável: {ativo['responsavel']}
-Status     : {ativo['status']}
-Data       : {ativo['data_criacao']}
------------------------------------------
-        """)
-
-
-def alterar_status():
-    ativos = carregar_dados(ARQUIVO_ATIVOS)
-
-    if not ativos:
-        print("\nNenhum ativo cadastrado.\n")
-        return
-
-    protocolo = input("Digite o protocolo do ativo: ").strip().upper()
-    status_validos = ["ABERTO", "EM ANDAMENTO", "CONCLUIDO"]
-
-    for ativo in ativos:
-        if ativo["protocolo"].upper() == protocolo:
-            print(f"\nStatus atual: {ativo['status']}")
-            
-            novo_status = input(
-                "Novo status (ABERTO / EM ANDAMENTO / CONCLUIDO): "
-            ).strip().upper()
-
-            if novo_status not in status_validos:
-                print("\n❌ Status inválido.\n")
-                return
-
-            ativo["status"] = novo_status
-            salvar_dados(ARQUIVO_ATIVOS, ativos)
-            print("\n✅ Status updated com sucesso!\n")
-            return
-
-    print("\n❌ Protocolo não encontrado.\n")
-
-
-def excluir_ativo():
-    ativos = carregar_dados(ARQUIVO_ATIVOS)
-
-    if not ativos:
-        print("\nNenhum ativo cadastrado.\n")
-        return
-
-    protocolo = input("Digite o protocolo para excluir: ").strip().upper()
-
-    nova_lista = []
-    removido = False
-
-    for ativo in ativos:
-        if ativo["protocolo"].upper() != protocolo:
-            nova_lista.append(ativo)
-        else:
-            removido = True
-
-    if removido:
-        salvar_dados(ARQUIVO_ATIVOS, nova_lista)
-        print("\n✅ Ativo removido com sucesso!\n")
-    else:
-        print("\n❌ Protocolo não encontrado.\n")
-
-
-def menu():
     while True:
-        print("""
-====================================
- SISTEMA DE CONTROLE DE ATIVOS
-====================================
+        print("\nCategorias de Ativos:")
+        for tipo in TipoAtivo:
+            nome_exibicao = tipo.name.replace("_", " ").capitalize()
+            print(f"{tipo.value} - {nome_exibicao}")
+        t_input = input("Escolha o código da categoria: ").strip()
+        if t_input.lower() == "v":
+            return
+        try:
+            t_cod = int(t_input)
+            tipo_nome = TipoAtivo(t_cod).name.replace("_", " ").capitalize()
+            break
+        except (ValueError, KeyError):
+            print("[!] Categoria inválida.")
 
-1 - Cadastrar usuário
-2 - Listar usuários
-3 - Cadastrar ativo
-4 - Listar ativos
-5 - Alterar status do ativo
-6 - Excluir ativo
-7 - Sair
+    novo = Ativo(id_at, nome, tipo_nome, local, responsavel)
+    base_ativos[id_at] = novo
+    print(f"\n[+] Ativo pré-cadastrado com ID: {id_at}")
 
-====================================
-        """)
-
-        opcao = input("Escolha uma opção: ").strip()
-
-        if opcao == "1":
-            cadastrar_usuario()
-        elif opcao == "2":
-            listar_usuarios()
-        elif opcao == "3":
-            cadastrar_ativo()
-        elif opcao == "4":
-            listar_ativos()
-        elif opcao == "5":
-            alterar_status()
-        elif opcao == "6":
-            excluir_ativo()
-        elif opcao == "7":
-            print("\nSistema encerrado.")
+    while True:
+        opcao_vuln = input("Deseja adicionar vulnerabilidade? (S/N): ").strip().lower()
+        if opcao_vuln == "v":
+            salvar_dados()
+            return
+        elif opcao_vuln == "s":
+            nova_vuln = coletar_dados_vulnerabilidade()
+            if nova_vuln:
+                novo.adicionar_vulnerabilidade(nova_vuln)
+                print("[+] Vulnerabilidade adicionada.")
+            break
+        elif opcao_vuln == "n":
             break
         else:
-            print("\n❌ Opção inválida!\n")
+            print("[!] Digite apenas S ou N.")
+            
+    salvar_dados()
+    print("\n[+] Dados gravados com sucesso.\n")
 
+def mostrar_indice():
+    if not base_ativos:
+        print("\n[!] Nenhum ativo cadastrado.")
+        return False
+    print("\n--- LISTA DE ATIVOS ---")
+    print(f"{'ID':<6} | {'NOME/HOSTNAME':<20}")
+    print("-" * 35)
+    for id_at in sorted(base_ativos.keys()):
+        print(f"{id_at:<6} | {base_ativos[id_at].nome:<20}")
+    return True
+
+def consultar_ativo():
+    if not base_ativos:
+        print("\n[!] Nenhum ativo encontrado.")
+        return
+    print("\n--- CONSULTA DE ATIVOS ---")
+    termo = input("Digite parte do nome (Enter para listar todos): ").strip().lower()
+    
+    encontrados = {}
+    for id_at, ativo in base_ativos.items():
+        if termo in ativo.nome.lower():
+            encontrados[id_at] = ativo
+
+    if not encontrados:
+        print("[!] Nenhum resultado.")
+        return
+
+    print("\n--- RESULTADOS ---")
+    for id_at in encontrados:
+        print(f"{id_at} - {encontrados[id_at].nome}")
+
+    while True:
+        escolha = input("\nDigite o ID para detalhes (ou 'v'): ").strip()
+        if escolha.lower() == "v":
+            return
+        try:
+            escolha = int(escolha)
+            ativo = encontrados.get(escolha)
+            if ativo:
+                print(f"\n==========================================")
+                print(f"DETALHES DO ATIVO #{ativo.id_ativo}")
+                print(f"==========================================")
+                print(f"Nome/Hostname:      {ativo.nome}")
+                print(f"Tipo/Categoria:     {ativo.tipo}")
+                print(f"Localização/Setor:  {ativo.localizacao}")
+                print(f"Responsável Geral:  {ativo.responsavel}")
+                print(f"------------------------------------------")
+                print("Vulnerabilidades Registradas:")
+                print(f"------------------------------------------")
+                
+                if ativo.vulnerabilidades:
+                    for v in ativo.vulnerabilidades:
+                        info_corr = f" (Responsável: {v.responsavel_correcao})" if v.responsavel_correcao else ""
+                        print(f" -> [{str(v.severidade).upper()}] {v.descricao}")
+                        print(f"    Status de Tratamento: {v.status}{info_corr}\n")
+                else:
+                    print(" -> Nenhuma vulnerabilidade encontrada para este ativo.")
+                print(f"==========================================")
+                break
+            else:
+                print("[!] ID inválido.")
+        except ValueError:
+            print("[!] Digite um número válido.")
+
+def gerenciar_vulnerabilidades_ativo():
+    if not mostrar_indice():
+        return
+    while True:
+        id_input = input("\nID do ativo para gerenciar (ou 'v' para voltar): ").strip()
+        if id_input.lower() == "v":
+            return
+        try:
+            id_at = int(id_input)
+            ativo = base_ativos.get(id_at)
+            if ativo:
+                break
+            print("[!] Ativo não encontrado.")
+        except ValueError:
+            print("[!] ID inválido.")
+
+    print(f"\nAtivo Selecionado: {ativo.nome}")
+    print(f"Tipo: {ativo.tipo} | Local: {ativo.localizacao} | Responsável: {ativo.responsavel}")
+    
+    if ativo.vulnerabilidades:
+        print("\nVulnerabilidades atuais:")
+        for i, v in enumerate(ativo.vulnerabilidades, start=1):
+            info_corr = f" (Resp: {v.responsavel_correcao})" if v.responsavel_correcao else ""
+            print(f"{i} - [{str(v.severidade).upper()}] {v.descricao} (Status: {v.status}{info_corr})")
+    else:
+        print("[!] Este ativo não possui falhas registradas.")
+
+    print("\nO que deseja fazer?")
+    print("1. Adicionar nova vulnerabilidade")
+    print("2. Modificar status de uma vulnerabilidade")
+    print("3. Editar dados do ativo (Nome, Tipo, Localização, Responsável)")
+    print("v. Voltar")
+    opcao = input("Escolha uma opção: ").strip()
+    if opcao.lower() == "v":
+        return
+
+    if opcao == "1":
+        nova_vuln = coletar_dados_vulnerabilidade()
+        if nova_vuln:
+            ativo.adicionar_vulnerabilidade(nova_vuln)
+            print("[+] Nova vulnerabilidade adicionada.")
+            
+    elif opcao == "2":
+        if not ativo.vulnerabilidades:
+            print("[!] Não há vulnerabilidades para modificar.")
+            return
+        while True:
+            idx_input = input("Número da vulnerabilidade (ou 'v'): ").strip()
+            if idx_input.lower() == "v":
+                return
+            try:
+                idx = int(idx_input) - 1
+                if 0 <= idx < len(ativo.vulnerabilidades):
+                    break
+                print("[!] Número inválido.")
+            except ValueError:
+                print("[!] Digite um número.")
+                
+        while True:
+            print("\nNovo Status:")
+            for st in StatusVuln:
+                nome_exibicao = st.name.replace("_", " ").capitalize()
+                print(f"{st.value} - {nome_exibicao}")
+            st_input = input("Escolha o status: ").strip()
+            if st_input.lower() == "v":
+                return
+            try:
+                st_cod = int(st_input)
+                status_enum = StatusVuln(st_cod)
+                break
+            except (ValueError, KeyError):
+                print("[!] Código inválido.")
+                
+        ativo.vulnerabilidades[idx].status = status_enum.name.replace("_", " ").capitalize()
+        
+        if status_enum in [StatusVuln.CORRIGIDA, StatusVuln.EM_TRATAMENTO]:
+            nome_resp = input("Nome do responsável pela ação/correção: ").strip()
+            if nome_resp.lower() == "v":
+                return
+            ativo.vulnerabilidades[idx].responsavel_correcao = nome_resp
+        else:
+            ativo.vulnerabilidades[idx].responsavel_correcao = None
+            
+        print("[+] Status updated.")
+
+    elif opcao == "3":
+        print(f"\n--- ATUALIZAR DADOS DO ATIVO #{ativo.id_ativo} ---")
+        print("[Dica: Pressione Enter sem digitar nada para manter o dado atual]")
+        
+        novo_nome = input(f"Nome/Hostname atual [{ativo.nome}]: ").strip()
+        if novo_nome.lower() == 'v': return
+        if novo_nome != "":
+            ativo.nome = novo_nome
+
+        novo_resp = input(f"Responsável atual [{ativo.responsavel}]: ").strip()
+        if novo_resp.lower() == 'v': return
+        if novo_resp != "":
+            ativo.responsavel = novo_resp
+
+        nova_local = input(f"Localização/Setor atual [{ativo.localizacao}]: ").strip()
+        if nova_local.lower() == 'v': return
+        if nova_local != "":
+            ativo.localizacao = nova_local
+
+        while True:
+            print(f"\nCategoria atual: {ativo.tipo}")
+            print("Deseja alterar? Digite o código da nova categoria ou Enter para pular:")
+            for tipo in TipoAtivo:
+                nome_exibicao = tipo.name.replace("_", " ").capitalize()
+                print(f"{tipo.value} - {nome_exibicao}")
+            
+            t_input = input("Escolha o código (ou Enter para pular): ").strip()
+            if t_input.lower() == 'v': return
+            if t_input == "":
+                break
+            try:
+                t_cod = int(t_input)
+                ativo.tipo = TipoAtivo(t_cod).name.replace("_", " ").capitalize()
+                break
+            except (ValueError, KeyError):
+                print("[!] Categoria inválida. Tente novamente.")
+
+        print("[+] Dados do ativo updated com sucesso!")
+        
+    else:
+        print("[!] Opção inválida.")
+        
+    salvar_dados()
+
+def menu():
+    carregar_dados()
+    while True:
+        print("\n===== SISTEMA DE INVENTÁRIO TI =====")
+        print("1. Cadastrar Ativo")
+        print("2. Listar e Consultar Ativos")
+        print("3. Gerenciar Ativo (Vulnerabilidades / Dados do Ativo)")
+        print("4. Remover Ativo")
+        print("0. Sair")
+        opcao = input("\nSelecione: ").strip()
+
+        if opcao == "1":
+            cadastrar_ativo()
+        elif opcao == "2":
+            consultar_ativo()
+        elif opcao == "3":
+            gerenciar_vulnerabilidades_ativo()
+        elif opcao == "4":
+            if mostrar_indice():
+                while True:
+                    id_rem_input = input("ID para remover (ou 'v'): ").strip()
+                    if id_rem_input.lower() == "v":
+                        break
+                    try:
+                        id_rem = int(id_rem_input)
+                        if id_rem in base_ativos:
+                            del base_ativos[id_rem]
+                            salvar_dados()
+                            print("[+] Ativo removido com sucesso.")
+                            break
+                        else:
+                            print("[!] ID não encontrado.")
+                    except ValueError:
+                        print("[!] Digite um número válido.")
+        elif opcao == "0":
+            print("\n[!] Salvando dados...")
+            salvar_dados()
+            print("\n======= PROGRAMA FINALIZADO =======")
+            break
+        else:
+            print("[!] Opção inválida.")
 
 if __name__ == "__main__":
     menu()
