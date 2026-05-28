@@ -1,0 +1,228 @@
+import json
+import os
+from datetime import datetime
+
+ARQUIVO_ATIVOS = "ativos.json"
+ARQUIVO_USUARIOS = "usuarios.json"
+
+
+def carregar_dados(nome_arquivo):
+    if not os.path.exists(nome_arquivo):
+        return []
+
+    try:
+        with open(nome_arquivo, "r", encoding="utf-8") as arq:
+            return json.load(arq)
+    except json.JSONDecodeError:
+        print(f"⚠️ Erro ao ler {nome_arquivo}. Arquivo corrompido.")
+        return []
+    except Exception as erro:
+        print(f"⚠️ Erro inesperado: {erro}")
+        return []
+
+
+def salvar_dados(nome_arquivo, dados):
+    try:
+        with open(nome_arquivo, "w", encoding="utf-8") as arq:
+            json.dump(dados, arq, indent=4, ensure_ascii=False)
+    except Exception as erro:
+        print(f"⚠️ Erro ao salvar dados: {erro}")
+
+
+def gerar_protocolo():
+    ativos = carregar_dados(ARQUIVO_ATIVOS)
+
+    if not ativos:
+        return "ATV-0001"
+
+    try:
+        ultimo_protocolo = ativos[-1]["protocolo"]
+        numero = int(ultimo_protocolo.split("-")[1])
+    except (KeyError, ValueError, IndexError):
+        numero = len(ativos)
+
+    novo_numero = numero + 1
+    return f"ATV-{novo_numero:04d}"
+
+
+def cadastrar_usuario():
+    usuarios = carregar_dados(ARQUIVO_USUARIOS)
+
+    nome = input("Nome do usuário: ").strip()
+    email = input("Email: ").strip()
+
+    if not nome or not email:
+        print("\n❌ Nome e email são obrigatórios.\n")
+        return
+
+    novo_usuario = {
+        "id": len(usuarios) + 1,
+        "nome": nome,
+        "email": email
+    }
+
+    usuarios.append(novo_usuario)
+    salvar_dados(ARQUIVO_USUARIOS, usuarios)
+    print("\n✅ Usuário cadastrado com sucesso!\n")
+
+
+def listar_usuarios():
+    usuarios = carregar_dados(ARQUIVO_USUARIOS)
+
+    if not usuarios:
+        print("\nNenhum usuário cadastrado.\n")
+        return
+
+    print("\n===== USUÁRIOS =====")
+    for usuario in usuarios:
+        print(f"""
+ID: {usuario['id']}
+Nome: {usuario['nome']}
+Email: {usuario['email']}
+        """)
+
+
+def cadastrar_ativo():
+    ativos = carregar_dados(ARQUIVO_ATIVOS)
+    protocolo = gerar_protocolo()
+
+    titulo = input("Título do ativo: ").strip()
+    descricao = input("Descrição: ").strip()
+    responsavel = input("Responsável: ").strip()
+
+    if not titulo or not responsavel:
+        print("\n❌ Título e responsável são obrigatórios.\n")
+        return
+
+    novo_ativo = {
+        "protocolo": protocolo,
+        "titulo": titulo,
+        "descricao": descricao,
+        "responsavel": responsavel,
+        "status": "ABERTO",
+        "data_criacao": datetime.now().strftime("%d/%m/%Y %H:%M")
+    }
+
+    ativos.append(novo_ativo)
+    salvar_dados(ARQUIVO_ATIVOS, ativos)
+
+    print("\n✅ Ativo cadastrado com sucesso!")
+    print(f"📌 Protocolo gerado: {protocolo}\n")
+
+
+def listar_ativos():
+    ativos = carregar_dados(ARQUIVO_ATIVOS)
+
+    if not ativos:
+        print("\nNenhum ativo cadastrado.\n")
+        return
+
+    print("\n========== LISTA DE ATIVOS ==========")
+    for ativo in ativos:
+        print(f"""
+Protocolo  : {ativo['protocolo']}
+Título     : {ativo['titulo']}
+Descrição  : {ativo['descricao']}
+Responsável: {ativo['responsavel']}
+Status     : {ativo['status']}
+Data       : {ativo['data_criacao']}
+-----------------------------------------
+        """)
+
+
+def alterar_status():
+    ativos = carregar_dados(ARQUIVO_ATIVOS)
+
+    if not ativos:
+        print("\nNenhum ativo cadastrado.\n")
+        return
+
+    protocolo = input("Digite o protocolo do ativo: ").strip().upper()
+    status_validos = ["ABERTO", "EM ANDAMENTO", "CONCLUIDO"]
+
+    for ativo in ativos:
+        if ativo["protocolo"].upper() == protocolo:
+            print(f"\nStatus atual: {ativo['status']}")
+            
+            novo_status = input(
+                "Novo status (ABERTO / EM ANDAMENTO / CONCLUIDO): "
+            ).strip().upper()
+
+            if novo_status not in status_validos:
+                print("\n❌ Status inválido.\n")
+                return
+
+            ativo["status"] = novo_status
+            salvar_dados(ARQUIVO_ATIVOS, ativos)
+            print("\n✅ Status updated com sucesso!\n")
+            return
+
+    print("\n❌ Protocolo não encontrado.\n")
+
+
+def excluir_ativo():
+    ativos = carregar_dados(ARQUIVO_ATIVOS)
+
+    if not ativos:
+        print("\nNenhum ativo cadastrado.\n")
+        return
+
+    protocolo = input("Digite o protocolo para excluir: ").strip().upper()
+
+    nova_lista = []
+    removido = False
+
+    for ativo in ativos:
+        if ativo["protocolo"].upper() != protocolo:
+            nova_lista.append(ativo)
+        else:
+            removido = True
+
+    if removido:
+        salvar_dados(ARQUIVO_ATIVOS, nova_lista)
+        print("\n✅ Ativo removido com sucesso!\n")
+    else:
+        print("\n❌ Protocolo não encontrado.\n")
+
+
+def menu():
+    while True:
+        print("""
+====================================
+ SISTEMA DE CONTROLE DE ATIVOS
+====================================
+
+1 - Cadastrar usuário
+2 - Listar usuários
+3 - Cadastrar ativo
+4 - Listar ativos
+5 - Alterar status do ativo
+6 - Excluir ativo
+7 - Sair
+
+====================================
+        """)
+
+        opcao = input("Escolha uma opção: ").strip()
+
+        if opcao == "1":
+            cadastrar_usuario()
+        elif opcao == "2":
+            listar_usuarios()
+        elif opcao == "3":
+            cadastrar_ativo()
+        elif opcao == "4":
+            listar_ativos()
+        elif opcao == "5":
+            alterar_status()
+        elif opcao == "6":
+            excluir_ativo()
+        elif opcao == "7":
+            print("\nSistema encerrado.")
+            break
+        else:
+            print("\n❌ Opção inválida!\n")
+
+
+if __name__ == "__main__":
+    menu()
