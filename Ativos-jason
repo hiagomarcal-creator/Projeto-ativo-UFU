@@ -1,17 +1,41 @@
-Python
 import sqlite3
-from enum import Enum
 
 ARQUIVO_DB = "inventario_seguranca.db"
 
+CATEGORIAS_ATIVO = {
+    1: "Notebooks",
+    2: "Servidores",
+    3: "Estações de Trabalho",
+    4: "Roteadores",
+    5: "Impressoras de Rede",
+    6: "Sistemas Internos",
+    7: "Softwares Licenciados",
+    8: "Aplicações Web",
+    9: "Bancos de Dados"
+}
+
+SEVERIDADE = {
+    1: "Baixa",
+    2: "Média",
+    3: "Alta",
+    4: "Crítica"
+}
+
+STATUS_VULN = {
+    1: "Aberta",
+    2: "Em tratamento",
+    3: "Corrigida",
+    4: "Aceita como risco"
+}
+
 def conectar_banco():
     conn = sqlite3.connect(ARQUIVO_DB)
-    conn.execute("PRAGMA foreign_keys = ON;")
     conn.row_factory = sqlite3.Row
     return conn, conn.cursor()
 
 def inicializar_banco():
     conn, cursor = conectar_banco()
+    cursor.execute("PRAGMA foreign_keys = ON;")
     
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS ativos (
@@ -38,64 +62,47 @@ def inicializar_banco():
     conn.commit()
     conn.close()
 
-class TipoAtivo(Enum):
-    NOTEBOOKS = 1
-    SERVIDORES = 2
-    ESTACOES_DE_TRABALHO = 3
-    ROTEADORES = 4
-    IMPRESSORAS_DE_REDE = 5
-    SISTEMAS_INTERNOS = 6
-    SOFTWARES_LICENCIADOS = 7
-    APLICACOES_WEB = 8
-    BANCOS_DE_DADOS = 9
-
-class Severidade(Enum):
-    BAIXA = 1
-    MEDIA = 2
-    ALTA = 3
-    CRITICA = 4
-
-class StatusVuln(Enum):
-    ABERTA = 1
-    EM_TRATAMENTO = 2
-    CORRIGIDA = 3
-    ACEITA_COMO_RISCO = 4
-
 def coletar_dados_vulnerabilidade():
     print("\n[Dica: Digite 'v' para voltar]")
     desc = input("Descrição da vulnerabilidade: ").strip()
-    if desc.lower() == "v" or not desc: return None
+    if desc.lower() == "v": return None
 
     while True:
         print("\nNíveis de Severidade:")
-        for sev in Severidade:
-            print(f"{sev.value} - {sev.name.capitalize()}")
+        for codigo, nome in SEVERIDADE.items():
+            print(f"{codigo} - {nome}")
+            
         s_input = input("Escolha o código da severidade: ").strip()
         if s_input.lower() == "v": return None
+        
         try:
             s_cod = int(s_input)
-            severidade_nome = Severidade(s_cod).name.capitalize()
-            break
-        except (ValueError, KeyError):
-            print("[!] Código de severidade inválido.")
+            if s_cod in SEVERIDADE:
+                severidade_nome = SEVERIDADE[s_cod]
+                break
+            print("[!] Código inválido.")
+        except ValueError:
+            print("[!] Digite um número válido.")
 
     while True:
         print("\nStatus da Vulnerabilidade:")
-        for st in StatusVuln:
-            nome_exibicao = st.name.replace("_", " ").capitalize()
-            print(f"{st.value} - {nome_exibicao}")
+        for codigo, nome in STATUS_VULN.items():
+            print(f"{codigo} - {nome}")
+            
         st_input = input("Escolha o código do status: ").strip()
         if st_input.lower() == "v": return None
+        
         try:
             st_cod = int(st_input)
-            status_enum = StatusVuln(st_cod)
-            status_nome = status_enum.name.replace("_", " ").capitalize()
-            break
-        except (ValueError, KeyError):
-            print("[!] Código de status inválido.")
+            if st_cod in STATUS_VULN:
+                status_nome = STATUS_VULN[st_cod]
+                break
+            print("[!] Código inválido.")
+        except ValueError:
+            print("[!] Digite um número válido.")
 
     responsavel_corr = None
-    if status_enum in [StatusVuln.CORRIGIDA, StatusVuln.EM_TRATAMENTO]:
+    if st_cod in [2, 3]:
         responsavel_corr = input("Nome do responsável pela ação/correção: ").strip()
         if responsavel_corr.lower() == "v": return None
 
@@ -106,27 +113,30 @@ def cadastrar_ativo():
     print("[Dica: Digite 'v' para voltar]")
     
     nome = input("Nome/Hostname do Ativo: ").strip()
-    if nome.lower() == "v" or not nome: return
+    if nome.lower() == "v": return
     
     responsavel = input("Responsável: ").strip()
-    if responsavel.lower() == "v" or not responsavel: return
+    if responsavel.lower() == "v": return
     
     local = input("Setor/Localização: ").strip()
-    if local.lower() == "v" or not local: return
+    if local.lower() == "v": return
 
     while True:
         print("\nCategorias de Ativos:")
-        for tipo in TipoAtivo:
-            nome_exibicao = tipo.name.replace("_", " ").capitalize()
-            print(f"{tipo.value} - {nome_exibicao}")
+        for codigo, nome_cat in CATEGORIAS_ATIVO.items():
+            print(f"{codigo} - {nome_cat}")
+            
         t_input = input("Escolha o código da categoria: ").strip()
         if t_input.lower() == "v": return
+        
         try:
             t_cod = int(t_input)
-            tipo_nome = TipoAtivo(t_cod).name.replace("_", " ").capitalize()
-            break
-        except (ValueError, KeyError):
+            if t_cod in CATEGORIAS_ATIVO:
+                tipo_nome = CATEGORIAS_ATIVO[t_cod]
+                break
             print("[!] Categoria inválida.")
+        except ValueError:
+            print("[!] Digite um número válido.")
 
     conn, cursor = conectar_banco()
     
@@ -194,7 +204,8 @@ def consultar_ativo():
     while True:
         escolha = input("\nDigite o ID para detalhes (ou 'v'): ").strip()
         if escolha.lower() == "v": 
-            break
+            conn.close()
+            return
         try:
             escolha_id = int(escolha)
             cursor.execute("SELECT * FROM ativos WHERE id = ?;", (escolha_id,))
@@ -234,7 +245,6 @@ def consultar_ativo():
 def gerenciar_vulnerabilidades_ativo():
     if not mostrar_indice(): return
     
-    conn = None
     while True:
         id_input = input("\nID do ativo para gerenciar (ou 'v' para voltar): ").strip()
         if id_input.lower() == "v": return
@@ -243,8 +253,7 @@ def gerenciar_vulnerabilidades_ativo():
             conn, cursor = conectar_banco()
             cursor.execute("SELECT * FROM ativos WHERE id = ?;", (id_at,))
             ativo = cursor.fetchone()
-            if ativo: 
-                break
+            if ativo: break
             print("[!] Ativo não encontrado.")
             conn.close()
         except ValueError:
@@ -256,7 +265,6 @@ def gerenciar_vulnerabilidades_ativo():
     print("3. Editar dados estruturais do ativo")
     print("v. Voltar")
     opcao = input("Escolha uma opção: ").strip()
-    
     if opcao.lower() == "v": 
         conn.close()
         return
@@ -300,23 +308,24 @@ def gerenciar_vulnerabilidades_ativo():
         
         while True:
             print("\nNovo Status:")
-            for st in StatusVuln:
-                print(f"{st.value} - {st.name.replace('_', ' ').capitalize()}")
+            for codigo, nome_status in STATUS_VULN.items():
+                print(f"{codigo} - {nome_status}")
+                
             st_input = input("Escolha o status: ").strip()
             if st_input.lower() == "v": 
                 conn.close()
                 return
             try:
                 st_cod = int(st_input)
-                status_enum = StatusVuln(st_cod)
-                break
-            except (ValueError, KeyError):
+                if st_cod in STATUS_VULN:
+                    novo_status = STATUS_VULN[st_cod]
+                    break
+                print("[!] Código inválido.")
+            except ValueError:
                 print("[!] Código inválido.")
                 
-        novo_status = status_enum.name.replace("_", " ").capitalize()
-        
         responsavel_acao = None
-        if status_enum in [StatusVuln.CORRIGIDA, StatusVuln.EM_TRATAMENTO]:
+        if st_cod in [2, 3]:
             responsavel_acao = input("Nome do responsável pela ação: ").strip()
             
         cursor.execute("""
@@ -325,7 +334,7 @@ def gerenciar_vulnerabilidades_ativo():
             WHERE id = ?;
         """, (novo_status, responsavel_acao, vuln_selecionada['id']))
         conn.commit()
-        print("[+] Status atualizado com sucesso no SQLite.")
+        print("[+] Status updated com sucesso no SQLite.")
 
     elif opcao == "3":
         print(f"\n--- ATUALIZAR DADOS DO ATIVO #{ativo['id']} ---")
@@ -348,11 +357,7 @@ def gerenciar_vulnerabilidades_ativo():
         conn.commit()
         print("[+] Dados estruturais atualizados com sucesso!")
         
-    else:
-        print("[!] Opção inválida.")
-        
-    if conn:
-        conn.close()
+    conn.close()
 
 def remover_ativo():
     if not mostrar_indice(): return
@@ -362,6 +367,8 @@ def remover_ativo():
         try:
             id_at = int(id_input)
             conn, cursor = conectar_banco()
+            
+            cursor.execute("PRAGMA foreign_keys = ON;")
             
             cursor.execute("SELECT id FROM ativos WHERE id = ?;", (id_at,))
             if cursor.fetchone():
@@ -376,22 +383,27 @@ def remover_ativo():
             print("[!] Digite um número válido.")
 
 def menu():
-    inicializar_banco() 
+    inicializar_banco()
     while True:
         print("\n===== SISTEMA DE INVENTÁRIO TI (SQLITE NATIVO) =====")
         print("1. Cadastrar Ativo")
         print("2. Listar e Consultar Ativos")
-        print("3. Gerenciar Ativo (Vulnerabilidades / Dados)")
+        print("3. Gerenciar Ativo (Vulnerabilidades / Dados do Ativo)")
         print("4. Remover Ativo")
         print("0. Sair")
         opcao = input("\nSelecione: ").strip()
 
-        if opcao == "1": cadastrar_ativo()
-        elif opcao == "2": consultar_ativo()
-        elif opcao == "3": gerenciar_vulnerabilidades_ativo()
-        elif opcao == "4": remover_ativo()
+        if opcao == "1":
+            cadastrar_ativo()
+        elif opcao == "2":
+            consultar_ativo()
+        elif opcao == "3":
+            gerenciar_vulnerabilidades_ativo()
+        elif opcao == "4":
+            remover_ativo()
         elif opcao == "0":
             print("\n======= PROGRAMA FINALIZADO =======")
+            print("Obrigado por utilizar o sistema.")
             break
         else:
             print("[!] Opção inválida.")
